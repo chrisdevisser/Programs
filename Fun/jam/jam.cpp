@@ -13,6 +13,91 @@ std::runtime_error MakeError(const std::string &functionName, bool getLastError 
     return std::runtime_error(functionName + " failed with error code " + (getLastError ? std::to_string(GetLastError()) : ""));
 }
 
+std::wstring GetDllPath();
+void InjectDll(HANDLE);
+void AdjustPrivileges();
+DWORD PidFromName(const std::wstring &);
+
+int main() {
+    using namespace boost::program_options;
+
+    try {
+        AdjustPrivileges();
+    } catch (std::runtime_error &ex) {
+        std::cout << ex.what() << "\n";
+    }
+
+    auto cmdLine = GetCommandLineW();
+    int argc;
+    auto argv = CommandLineToArgvW(cmdLine, &argc);
+
+    std::wstring process;
+
+    options_description options{"Options"};
+    options.add_options()
+    ("help,?", "Shows this message.")
+    ("process,p", wvalue<std::wstring>(&process)->required(), "The name or PID of the process to jam. The PID is tried first. To make it only a name, specify the nopid option.")
+    ("nopid,n", "Specifies that the process option is a name. It will not be tried as a PID if the name fails.");
+
+    positional_options_description pos;
+    pos.add("process", 1);
+
+    try {
+        variables_map map;
+        store(
+            wcommand_line_parser(argc, argv)
+            .options(options)
+            .style((command_line_style::default_style & ~command_line_style::allow_guessing) | command_line_style::allow_slash_for_short | command_line_style::allow_long_disguise)
+            .positional(pos)
+            .run(), map
+        );
+
+        if (map.count("help")) {
+            std::cout << options << "\n\n";
+            std::cout <<
+R"(Creates one thread in a process to make it use CPU.
+jam.dll must be in the same directory.
+
+Sample Usage
+============
+
+jam 1234
+jam notepad
+jam /nopid 5678
+jam "process with spaces"
+
+Returns 0 on success and 1 on failure.
+)";
+            return 0;
+        }
+
+        notify(map);
+
+        DWORD pid = 0;
+
+        if (!map.count("nopid")) {
+            try {
+                pid = std::stoi(process);
+            } catch (std::exception &) {}
+        }
+
+        if (!pid) {
+            process += (process.rfind(L".exe") == std::wstring::npos) ? L".exe" : L"";
+            pid = PidFromName(process);
+        }
+
+        HANDLE proc = OpenProcess(PROCESS_ALL_ACCESS, TRUE, pid);
+        if (!proc) {
+            throw MakeError("OpenProcess");
+        }
+
+        InjectDll(proc);
+    } catch (std::exception &ex) {
+        std::cout << ex.what() << "\n";
+        return 1;
+    }
+}
+
 std::wstring GetDllPath() {
     std::wstring ret(MAX_PATH, '\0');
     const auto copied = GetModuleFileNameW(nullptr, &ret[0], ret.size());
@@ -29,7 +114,7 @@ std::wstring GetDllPath() {
     return ret + L"/jam.dll";
 }
 
-void InjectDll(HANDLE process, int numThreads) {
+void InjectDll(HANDLE process) {
     const std::wstring dllPath = GetDllPath();
     const auto size = dllPath.size() * sizeof(wchar_t);
 
@@ -42,20 +127,13 @@ void InjectDll(HANDLE process, int numThreads) {
         throw MakeError("WriteProcessMemory");
     }
 
-    std::vector<HANDLE> remoteThreads(numThreads);
-
-    for (auto &thread : remoteThreads) {
-        thread = CreateRemoteThread(process, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(GetProcAddress(GetModuleHandleW(L"kernel32"), "LoadLibraryW")), remoteString, 0, nullptr );
-        if (!thread) {
-            throw MakeError("CreateRemoteThread");
-        }
+    HANDLE thread = CreateRemoteThread(process, nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(GetProcAddress(GetModuleHandleW(L"kernel32"), "LoadLibraryW")), remoteString, 0, nullptr );
+    if (!thread) {
+        throw MakeError("CreateRemoteThread");
     }
 
-    WaitForMultipleObjects(numThreads, remoteThreads.data(), TRUE, 5000);
-
-    for (auto &thread : remoteThreads) {
-        CloseHandle(thread);
-    }
+    WaitForSingleObject(thread, 2000);
+    CloseHandle(thread);
 
     VirtualFreeEx(process, remoteString, size, MEM_RELEASE);
 }
@@ -110,7 +188,7 @@ DWORD PidFromName(const std::wstring &name) {
     DWORD ret{};
     bool done;
     do {
-        std::wstring filename = pe.szExeFile +  L'\0';
+        std::wstring filename = pe.szExeFile;
 
         if (filename == name) {
             if (found) {
@@ -137,87 +215,4 @@ DWORD PidFromName(const std::wstring &name) {
     }
 
     return ret;
-}
-
-int main() {
-    using namespace boost::program_options;
-
-    try {
-        AdjustPrivileges();
-    } catch (std::runtime_error &ex) {
-        std::cout << ex.what() << "\n";
-    }
-
-    auto cmdLine = GetCommandLineW();
-    int argc;
-    auto argv = CommandLineToArgvW(cmdLine, &argc);
-
-    std::wstring process;
-    int numThreads;
-
-    options_description options{"Options"};
-    options.add_options()
-    ("help,?", "Shows this message.")
-    ("process,p", wvalue<std::wstring>(&process)->required(), "The name or PID of the process to jam. The PID is tried first. To make it only a name, specify the nopid option.")
-    ("nopid,n", "Specifies that the process option is a name. It will not be tried as a PID if the name fails.")
-    ("threads,t", value<int>(&numThreads)->default_value(1), "The number of threads to inject.");
-
-    positional_options_description pos;
-    pos.add("process", 1);
-
-    try {
-        variables_map map;
-        store(
-            wcommand_line_parser(argc, argv)
-            .options(options)
-            .style((command_line_style::default_style & ~command_line_style::allow_guessing) | command_line_style::allow_slash_for_short | command_line_style::allow_long_disguise)
-            .positional(pos)
-            .run(), map
-        );
-
-        if (map.count("help")) {
-            std::cout << options << "\n\n";
-            std::cout <<
-R"(Creates at least one thread in a process to make it use CPU.
-jam.dll must be in the same directory.
-
-Sample Usage
-============
-
-jam 1234
-jam notepad
-jam /nopid 5678
-jam "process with spaces"
-jam /t 2 notepad.exe
-
-Returns 0 on success and 1 on failure.
-)";
-            return 0;
-        }
-
-        notify(map);
-
-        DWORD pid = 0;
-
-        if (!map.count("nopid")) {
-            try {
-                pid = std::stoi(process);
-            } catch (std::exception &) {}
-        }
-
-        if (!pid) {
-            process += (process.rfind(L".exe") == std::wstring::npos) ? L".exe" : L"";
-            pid = PidFromName(process);
-        }
-
-        HANDLE proc = OpenProcess(PROCESS_ALL_ACCESS, TRUE, pid);
-        if (!proc) {
-            throw MakeError("OpenProcess");
-        }
-
-        InjectDll(proc, numThreads);
-    } catch (std::exception &ex) {
-        std::cout << ex.what() << "\n";
-        return 1;
-    }
 }
