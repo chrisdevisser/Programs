@@ -74,7 +74,7 @@ int main() {
         store(
             wcommand_line_parser(argc, argv)
             .options(cmdOptions)
-            .style(command_line_style::allow_slash_for_short | command_line_style::long_allow_next | command_line_style::default_style)
+            .style((command_line_style::default_style & ~command_line_style::allow_guessing) | command_line_style::allow_slash_for_short | command_line_style::allow_long_disguise)
             .positional(pos).run(), map
         );
 
@@ -85,7 +85,7 @@ int main() {
             std::cout << visible << "\n\n" <<
 
 R"(Displays a message box with the attributes specified.
-Slashes also work for short versions.
+Slashes also work.
 Newlines may be inserted with \n.
 
 Sample Usages

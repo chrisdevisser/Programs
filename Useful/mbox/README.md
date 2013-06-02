@@ -21,7 +21,7 @@ Options:
 
 
 Displays a message box with the attributes specified.
-Slashes also work for short versions.
+Slashes also work.
 Newlines may be inserted with \n.
 
 Sample Usages
