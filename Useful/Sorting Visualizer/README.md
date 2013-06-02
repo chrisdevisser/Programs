@@ -1,0 +1,3 @@
+This is a program that visualizes different types of sorts. The 7z bundles everything.
+
+Nothing here will harm your computer. Run "Sorting Visualizer.exe" for the main program. All of the others are run as part of panic sort and some will crash if run without arguments. .NET 3.5 is needed to run the programs. BEN.exe will exit when the pause/break key is pressed. In the rare case that the screen is left with a dark cover after a panic sort (sorry if it does, I haven't seen it happen yet after possibly fixing it), press alt-F4 to close it. One other problem I've noticed of late is that it might leave a couple windows you normally don't see open after running panic sort. I tackle everything that IsWindowVisible returns true for and I think it could do a bit better.
