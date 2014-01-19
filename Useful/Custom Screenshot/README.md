@@ -1,0 +1,1 @@
+Press shift-prnt scrn and then drag from one point on the screen to another to capture that rectangle.
