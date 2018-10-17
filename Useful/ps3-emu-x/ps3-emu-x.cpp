@@ -16,13 +16,14 @@
 
 HWND Create();
 HWND FindGameWindow();
-void SendKeyDown(int vk);
-void SendKeyUp(int vk);
+void SendKeyDown(int vk, int sc);
+void SendKeyUp(int vk, int sc);
 void SetOutput(std::wstring out);
 std::wstring GetTitle(HWND hwnd);
 
 #ifdef DOLPHIN
 int VkFromState(int state);
+int ScFromState(int state);
 #else
 #ifdef PCSX2
 bool PCSX2FrameLimitOn();
@@ -152,25 +153,25 @@ int main() {
 
                 #ifdef DOLPHIN
                     if (frameLimitOff) {
-                        SendKeyUp(VK_TAB);
+                        SendKeyUp(VK_TAB, 0x0f);
                         frameLimitOff = false;
 
                         SetOutput(L"Frame Limit On");
                     } else {
-                        SendKeyDown(VK_TAB);
+                        SendKeyDown(VK_TAB, 0x0f);
                         frameLimitOff = true;
 
                         SetOutput(L"Frame Limit Off");
                     }
                 #elif defined(PCSX2)
                     if (!PCSX2FrameLimitOn()) {
-                        SendKeyDown(VK_F4);
-                        SendKeyUp(VK_F4);
+                        SendKeyDown(VK_F4, 0x3e);
+                        SendKeyUp(VK_F4, 0x3e);
 
                         SetOutput(L"Frame Limit On");
                     } else {
-                        SendKeyDown(VK_F4);
-                        SendKeyUp(VK_F4);
+                        SendKeyDown(VK_F4, 0x3e);
+                        SendKeyUp(VK_F4, 0x3e);
 
                         SetOutput(L"Frame Limit On");
                     }
@@ -220,12 +221,12 @@ int main() {
                     startDown = true;
 
                     #ifdef DOLPHIN
-                    SendKeyDown(VkFromState(saveState));
-                    SendKeyUp(VkFromState(saveState));
+                    SendKeyDown(VkFromState(saveState), ScFromState(saveState));
+                    SendKeyUp(VkFromState(saveState), ScFromState(saveState));
                     #else
                     #ifdef PCSX2
-                    SendKeyDown(VK_F3);
-                    SendKeyUp(VK_F3);
+                    SendKeyDown(VK_F3, 0x3d);
+                    SendKeyUp(VK_F3, 0x3d);
                     auto saveState = GetPCSX2State();
                     #endif
                     #endif
@@ -238,14 +239,14 @@ int main() {
                     selectDown = true;
 
                     #ifdef DOLPHIN
-                    SendKeyDown(VK_LSHIFT);
-                    SendKeyDown(VkFromState(saveState));
-                    SendKeyUp(VkFromState(saveState));
-                    SendKeyUp(VK_LSHIFT);
+                    SendKeyDown(VK_LSHIFT, 0x2a);
+                    SendKeyDown(VkFromState(saveState), ScFromState(saveState));
+                    SendKeyUp(VkFromState(saveState), ScFromState(saveState));
+                    SendKeyUp(VK_LSHIFT, 0x2a);
                     #else
                     #ifdef PCSX2
-                    SendKeyDown(VK_F1);
-                    SendKeyUp(VK_F1);
+                    SendKeyDown(VK_F1, 0x3b);
+                    SendKeyUp(VK_F1, 0x3b);
                     auto saveState = GetPCSX2State();
                     #endif
                     #endif
@@ -398,17 +399,19 @@ HWND FindGameWindow() {
     return hwnd;
 }
 
-void SendKeyDown(int vk) {
+void SendKeyDown(int vk, int sc) {
     INPUT in{};
     in.type = INPUT_KEYBOARD;
     in.ki.wVk = vk;
+    in.ki.wScan = sc;
     SendInput(1, &in, sizeof in);
 }
 
-void SendKeyUp(int vk) {
+void SendKeyUp(int vk, int sc) {
     INPUT in{};
     in.type = INPUT_KEYBOARD;
     in.ki.wVk = vk;
+    in.ki.wScan = sc;
     in.ki.dwFlags = KEYEVENTF_KEYUP;
     SendInput(1, &in, sizeof in);
 }
@@ -428,6 +431,10 @@ std::wstring GetTitle(HWND hwnd) {
 int VkFromState(int state) {
     return state == 0 ? VK_F10 : VK_F1 - 1 + state;
 }
+
+int ScFromState(int state) {
+    return state == 0 ? 0x44 : 0x3a + state;
+}
 #else
 #ifdef PCSX2
 bool PCSX2FrameLimitOn() {
@@ -439,16 +446,16 @@ void AdjustPCSX2State(int newState) {
     auto state = GetPCSX2State();
     if (state <= newState) {
         for (; state < newState; ++state) {
-            SendKeyDown(VK_F2);
-            SendKeyUp(VK_F2);
+            SendKeyDown(VK_F2, 0x3c);
+            SendKeyUp(VK_F2, 0x3c);
             Sleep(20);
         }
     } else {
         for (; state > newState; --state) {
-            SendKeyDown(VK_LSHIFT);
-            SendKeyDown(VK_F2);
-            SendKeyUp(VK_F2);
-            SendKeyUp(VK_LSHIFT);
+            SendKeyDown(VK_LSHIFT, 0x2a);
+            SendKeyDown(VK_F2, 0x3c);
+            SendKeyUp(VK_F2, 0x3c);
+            SendKeyUp(VK_LSHIFT, 0x2a);
             Sleep(20);
         }
     }
