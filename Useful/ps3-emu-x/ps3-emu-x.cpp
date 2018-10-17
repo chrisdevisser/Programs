@@ -1,3 +1,5 @@
+#include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -9,6 +11,7 @@
 #include "directinput/directinput.h"
 #include "directinput/error.h"
 #include "directinput/gamecontroller.h"
+#include "directinput/genericcontrollerstate.h"
 #include "directinput/window.h"
 
 HWND Create();
@@ -58,11 +61,38 @@ int main() {
 
     resetCtlrs();
 
+    // struct TestState {
+    //     TestState(DIJOYSTATE2 state) : state(state) {}
+    //     DIJOYSTATE2 state;
+    // };
+
+    // DI8::MessageLoop([&] {
+    //     try {
+    //         Sleep(100);
+    //         ctlr->acquire();
+    //         auto state = ctlr->state<TestState>().state;
+
+    //         system("cls");
+    //         std::cout << 
+    //             "lX: " << state.lX << "\n" <<
+    //             "lY: " << state.lY << "\n" <<
+    //             "lZ: " << state.lZ << "\n" <<
+    //             "lRx: " << state.lRx << "\n" <<
+    //             "lRy: " << state.lRy << "\n" <<
+    //             "lRz: " << state.lRz << "\n" <<
+    //             "rgbButtons: [" << std::hex << std::showbase;
+    //         for (int i = 0; i <= 15; ++i) std::cout << std::dec << i << "=" << std::hex << +state.rgbButtons[i] << ",";
+    //         std::cout << +state.rgbButtons[16] << "]\n" <<
+    //             "rgdwPOV: [" << state.rgdwPOV[0] << "," << state.rgdwPOV[1] << "," << state.rgdwPOV[2] << "," << state.rgdwPOV[3] << "]\n";
+    //     } catch (DI8::Exception &ex) {
+    //         resetCtlrs();
+    //     }
+    // });
+
     DI8::MessageLoop([&] {
         try {
             Sleep(100);
 
-            FindGameWindow();
             if (pid) {
                 auto proc = OpenProcess(SYNCHRONIZE, FALSE, pid);
                 if (WaitForSingleObject(proc, 0) != WAIT_TIMEOUT) std::exit(0);
@@ -90,7 +120,16 @@ int main() {
 
             if (GetForegroundWindow() != FindGameWindow()) return;
 
-            auto state = ctlr->ps3State();
+            #ifdef PS3
+                auto tempState = ctlr->ps3State();
+            #elif defined(PS4)
+                auto tempState = ctlr->ps4State();
+            #elif defined(XBOX)
+                auto tempState = ctlr->xboxState();
+            #endif
+
+            auto state = DI8::GenericControllerState(tempState);
+
             if (!state.left()) leftDown = false;
             if (!state.right()) rightDown = false;
             if (switched? !state.select() : !state.start()) startDown = false;
@@ -107,36 +146,35 @@ int main() {
 
                 if (state.R3() && l3JustDown) {
                     switched = !switched;
-                    SetOutput(L"Save and load buttons switched");
+                    SetOutput(std::wstring(L"Save and load buttons switched to ") + (switched ? L"reversed" : L"normal"));
                     return;
                 }
 
                 #ifdef DOLPHIN
-                if (frameLimitOff) {
-                    SendKeyUp(VK_TAB);
-                    frameLimitOff = false;
-                #else
-                #ifdef PCSX2
-                if (!PCSX2FrameLimitOn()) {
-                    SendKeyDown(VK_F4);
-                    SendKeyUp(VK_F4);
-                #endif
-                #endif
+                    if (frameLimitOff) {
+                        SendKeyUp(VK_TAB);
+                        frameLimitOff = false;
 
-                    SetOutput(L"Frame Limit On");
-                } else {
-                #ifdef DOLPHIN
-                    SendKeyDown(VK_TAB);
-                    frameLimitOff = true;
-                #else
-                #ifdef PCSX2
-                    SendKeyDown(VK_F4);
-                    SendKeyUp(VK_F4);
-                #endif
-                #endif
+                        SetOutput(L"Frame Limit On");
+                    } else {
+                        SendKeyDown(VK_TAB);
+                        frameLimitOff = true;
 
-                    SetOutput(L"Frame Limit Off");
-                }
+                        SetOutput(L"Frame Limit Off");
+                    }
+                #elif defined(PCSX2)
+                    if (!PCSX2FrameLimitOn()) {
+                        SendKeyDown(VK_F4);
+                        SendKeyUp(VK_F4);
+
+                        SetOutput(L"Frame Limit On");
+                    } else {
+                        SendKeyDown(VK_F4);
+                        SendKeyUp(VK_F4);
+
+                        SetOutput(L"Frame Limit On");
+                    }
+                #endif
             } else {
                 l3Down = false;
                 l3JustDown = false;
@@ -333,16 +371,16 @@ BOOL CALLBACK FindGameWindowEnumProc(HWND hwnd, LPARAM gameHwnd) {
     };
 
     #ifdef DOLPHIN
-        if (std::wstring(className) != L"wxWindowNR") return TRUE;
+        if (std::wstring(className) != L"Qt5QWindowIcon") return TRUE;
 
-        if (text.find(L"Dolphin") == 0 && text.find(L"FPS") != std::wstring::npos && text.find(L"VPS") != std::wstring::npos && text.find(L"SPEED") != std::wstring::npos) {
+        if (text.find(L"FPS") != std::wstring::npos && text.find(L"VPS") != std::wstring::npos) {
             found();
         }
     #else
     #ifdef PCSX2
-        if (std::wstring(className) != L"wxWindowClassNR") return TRUE;
+        if (std::wstring(className) != L"wxWindowNR") return TRUE;
 
-        if (text.find(L"GSdx") == 0 && text.find(L"Limiter") != std::wstring::npos && text.find(L"fps") != std::wstring::npos && text.find(L"EE") != std::wstring::npos) {
+        if (text.find(L"GSdx") != std::wstring::npos && text.find(L"Limiter") != std::wstring::npos && text.find(L"EE") != std::wstring::npos) {
             found();
         }
     #endif
@@ -419,7 +457,7 @@ void AdjustPCSX2State(int newState) {
 int GetPCSX2State() {
     if (!FindGameWindow()) return 0;
     auto title = GetTitle(FindGameWindow());
-    auto pos = title.find(L"State ") + 6;
+    auto pos = title.find(L"Slot ") + 5;
     auto rest = title.substr(pos);
 
     int state = 0;

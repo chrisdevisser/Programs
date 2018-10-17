@@ -3,10 +3,13 @@
 
 #include <stdexcept>
 
-#include <dxutil/comptr.hh>
+// #include <dxutil/comptr.hh>
+#include "../comptr.hh"
 
 #include "directinput.h"
 #include "ps3controllerstate.h"
+#include "ps4controllerstate.h"
+#include "xboxcontrollerstate.h"
 
 namespace DI8 {
 
@@ -111,6 +114,14 @@ struct GameController {
 
     inline Ps3ControllerState ps3State() {
         return state<Ps3ControllerState>();
+    }
+
+    inline Ps4ControllerState ps4State() {
+        return state<Ps4ControllerState>();
+    }
+
+    inline XboxControllerState xboxState() {
+        return state<XboxControllerState>();
     }
 
 private:
